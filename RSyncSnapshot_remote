@@ -20,7 +20,20 @@
 # ------------------------------
 # Usage: RSyncSnapshot Source_Directory Target_Directory Number_of_Snapshots_to_Keep Log_File
 #          Lock_File Optional_Additional_RSync_Arguments ...
+USAGE="
+  Usage: bash RSyncSnapshot HOST USER Source_Directory Target_Directory
+          Number_of_Snapshots_to_Keep Log_File Lock_File
+          Optional_Additional_RSync_Arguments ... 
 
+    Options: 
+    HOST  hostname of the remote machine, must be authorized without password, i.e., via ssh key pair  
+    USER  login name on the remote machine 
+    Source_Directory  the local dir to be copied 
+    Target_Directory  the target dir on remote machine, must preexist and full path, not include \"user@host:\"
+    Number_of_Snapshots_to_Keep  a integer number
+    Log_File  Must be a local file 
+    Lock_File  any file indicating a RSyncSnapshot session is running if exists
+"
 # ----- Commands -----
 
 # NAS4Free command locations
@@ -55,12 +68,14 @@ RSYNC_OPTIONS="-acvxHS"
 # Make things pretty
 $ECHO
 
+# Get HOST and USER  
+HOST=$1; shift
+USER=$1; shift
 # Process the source argument
 if [[ ! $1 ]]
 then
-  $ECHO "Usage: RSyncSnapshot Source_Directory Target_Directory"
-  $ECHO "  Number_of_Snapshots_to_Keep Log_File Lock_File"
-  $ECHO "  Optional_Additional_RSync_Arguments ..."
+  #$ECHO "${USAGE}"
+  echo "${USAGE}"
   $ECHO
   $ECHO "Source directory not specified."
   $ECHO
@@ -77,28 +92,25 @@ fi
 # Process the target argument
 if [[ ! $2 ]]
 then
-  $ECHO "Usage: RSyncSnapshot Source_Directory Target_Directory"
-  $ECHO "  Number_of_Snapshots_to_Keep Log_File Lock_File"
-  $ECHO "  Optional_Additional_RSync_Arguments ..."
+  echo "${USAGE}"
   $ECHO
   $ECHO "Target directory not specified."
   $ECHO
   exit 1
 fi
 TARGET=${2%/}
-if [[ ! -d $TARGET ]]
+#if [[ ! -d $TARGET ]]
+if ! ssh ${HOST} "test -e ${TARGET}"
 then
   $ECHO "Specified target directory (\"$TARGET\") doesn't exist."
   $ECHO
-  #exit 1
+  exit 1
 fi
 
 # Process the snapshot count argument
 if [[ ! $3 ]]
 then
-  $ECHO "Usage: RSyncSnapshot Source_Directory Target_Directory"
-  $ECHO "  Number_of_Snapshots_to_Keep Log_File Lock_File"
-  $ECHO "  Optional_Additional_RSync_Arguments ..."
+  echo "${USAGE}"
   $ECHO
   $ECHO "Number of snapshots to keep not specified."
   $ECHO
@@ -121,9 +133,7 @@ fi
 # Process the log file argument
 if [[ ! $4 ]]
 then
-  $ECHO "Usage: RSyncSnapshot Source_Directory Target_Directory"
-  $ECHO "  Number_of_Snapshots_to_Keep Log_File Lock_File"
-  $ECHO "  Optional_Additional_RSync_Arguments ..."
+  echo "${USAGE}"
   $ECHO
   $ECHO "Log file not specified."
   $ECHO
@@ -134,9 +144,7 @@ LOG_FILE=$4
 # Process the lock file argument
 if [[ ! $5 ]]
 then
-  $ECHO "Usage: RSyncSnapshot Source_Directory Target_Directory"
-  $ECHO "  Number_of_Snapshots_to_Keep Log_File Lock_File"
-  $ECHO "  Optional_Additional_RSync_Arguments ..."
+  echo "${USAGE}"
   $ECHO
   $ECHO "Lock file not specified."
   $ECHO
@@ -175,7 +183,8 @@ SNAPSHOT=0
 while [[ $SNAPSHOT -le $SNAPSHOT_COUNT ]]
 do
   # Check if the snapshot directory doesn't exist
-  if [[ ! -d "$TARGET/Snapshot.$SNAPSHOT" ]]
+  #if [[ ! -d "$TARGET/Snapshot.$SNAPSHOT" ]]
+  if ! ssh ${HOST} "test -e $TARGET/Snapshot.$SNAPSHOT"
   then
     break
   fi
@@ -193,7 +202,8 @@ if [[ $SNAPSHOT -eq -1 ]]
 then
   $ECHO "Deleting oldest snapshot (number $SNAPSHOT_COUNT) ..."
   $ECHO "RSyncSnapshot: Deleting oldest snapshot (number $SNAPSHOT_COUNT)." >> "$LOG_FILE"
-  $RM -rf "$TARGET/Snapshot.$SNAPSHOT_COUNT"
+  #$RM -rf "$TARGET/Snapshot.$SNAPSHOT_COUNT"
+  ssh ${HOST} "rm -rf $TARGET/Snapshot.$SNAPSHOT_COUNT"
 fi
 
 # Make each snapshot one snapshot older (up to the first snapshot that doens't exist)
@@ -209,7 +219,8 @@ do
   # Move the snapshot
   $ECHO "Moving snapshot number $SNAPSHOT to $((SNAPSHOT+1)) ..."
   $ECHO "RSyncSnapshot: Moving snapshot number $SNAPSHOT to $((SNAPSHOT+1))." >> "$LOG_FILE"
-  $MV -f "$TARGET/Snapshot.$SNAPSHOT" "$TARGET/Snapshot.$((SNAPSHOT+1))"
+  #$MV -f "$TARGET/Snapshot.$SNAPSHOT" "$TARGET/Snapshot.$((SNAPSHOT+1))"
+  ssh ${HOST} "mv -f $TARGET/Snapshot.$SNAPSHOT" "$TARGET/Snapshot.$((SNAPSHOT+1))"
 done
 
 # Find the first snapshot that exists
@@ -217,7 +228,8 @@ SNAPSHOT=1
 while [[ $SNAPSHOT -le $SNAPSHOT_COUNT ]]
 do
   # Check if the snapshot directory exists
-  if [[ -d "$TARGET/Snapshot.$SNAPSHOT" ]]
+  #if [[ -d "$TARGET/Snapshot.$SNAPSHOT" ]]
+  if ssh ${HOST} "test -e $TARGET/Snapshot.$SNAPSHOT"
   then
     break
   fi
@@ -231,7 +243,8 @@ then
 fi
 
 # Create the snapshot directory
-$MKDIR "$TARGET/Snapshot.0"
+#$MKDIR "$TARGET/Snapshot.0"
+ssh ${HOST} "mkdir $TARGET/Snapshot.0"
 
 # Create the RSync command
 RSYNC_COMMAND="$RSYNC $RSYNC_OPTIONS "
@@ -245,7 +258,7 @@ do
   RSYNC_COMMAND+="\"$@[$i]\" "
 done
 RSYNC_COMMAND+="\"$SOURCE\" "
-RSYNC_COMMAND+="\"$TARGET/Snapshot.0\""
+RSYNC_COMMAND+="\"${USER}@${HOST}:${TARGET}/Snapshot.0\""
 
 # Do the actual backup using RSync
 $ECHO "Backing up \"$SOURCE\" to snapshot number 0 using the command below ..."
@@ -259,6 +272,7 @@ eval $RSYNC_COMMAND
 
 # Update the time of the snapshot directory
 #$TOUCH "$TARGET/Snapshot.0"
+ssh ${HOST} "$TOUCH $TARGET/Snapshot.0"
 
 # Remove the lock file
 $RM -f "$LOCK_FILE"

@@ -90,7 +90,7 @@ if [[ ! -d $TARGET ]]
 then
   $ECHO "Specified target directory (\"$TARGET\") doesn't exist."
   $ECHO
-  #exit 1
+  exit 1
 fi
 
 # Process the snapshot count argument
@@ -258,7 +258,7 @@ $ECHO >> "$LOG_FILE"
 eval $RSYNC_COMMAND
 
 # Update the time of the snapshot directory
-#$TOUCH "$TARGET/Snapshot.0"
+$TOUCH "$TARGET/Snapshot.0"
 
 # Remove the lock file
 $RM -f "$LOCK_FILE"
